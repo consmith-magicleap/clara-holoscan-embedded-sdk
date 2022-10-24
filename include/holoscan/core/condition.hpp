@@ -102,6 +102,7 @@ enum class ConditionType {
                                  ///< (nvidia::gxf::DownstreamReceptiveSchedulingTerm)
   kCount,                        ///< nvidia::gxf::CountSchedulingTerm
   kBoolean,                      ///< nvidia::gxf::BooleanSchedulingTerm
+  kAsynchronous,                 ///< nvidia::gxf::AsynchronousSchedulingTerm
 };
 
 /**

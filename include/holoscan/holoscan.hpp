@@ -37,6 +37,7 @@
 #include "./core/gxf/entity.hpp"
 
 // Conditions
+#include "./core/conditions/gxf/asynchronous.hpp"
 #include "./core/conditions/gxf/boolean.hpp"
 #include "./core/conditions/gxf/count.hpp"
 #include "./core/conditions/gxf/downstream_affordable.hpp"

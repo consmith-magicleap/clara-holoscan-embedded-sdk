@@ -28,6 +28,7 @@ enum class ArgContainerType : uint8_t;
 enum class ArgElementType;
 class ArgList;
 class ArgType;
+enum class AsynchronousConditionState;
 class Condition;
 enum class ConditionType;
 class Config;
@@ -73,6 +74,7 @@ class GXFOperator;
 }
 
 // Conditions
+class AsynchronousCondition;
 class BooleanCondition;
 class CountCondition;
 class DownstreamMessageAffordableCondition;

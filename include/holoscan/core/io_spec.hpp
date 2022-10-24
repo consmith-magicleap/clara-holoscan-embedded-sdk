@@ -25,6 +25,7 @@
 #include <utility>
 #include <vector>
 
+#include "./conditions/gxf/asynchronous.hpp"
 #include "./conditions/gxf/boolean.hpp"
 #include "./conditions/gxf/count.hpp"
 #include "./conditions/gxf/downstream_affordable.hpp"
@@ -132,6 +133,7 @@ class IOSpec {
    * - ConditionType::kDownstreamAffordable
    * - ConditionType::kCount
    * - ConditionType::kBoolean
+   * - ConditionType::kAsynchronous
    * - ConditionType::kNone
    *
    * @param type The type of the condition.
@@ -158,6 +160,10 @@ class IOSpec {
       case ConditionType::kBoolean:
         conditions_.emplace_back(type,
                                  std::make_shared<BooleanCondition>(std::forward<ArgsT>(args)...));
+        break;
+      case ConditionType::kAsynchronous:
+        conditions_.emplace_back(
+            type, std::make_shared<AsynchronousCondition>(std::forward<ArgsT>(args)...));
         break;
       case ConditionType::kNone:
         conditions_.emplace_back(type, nullptr);
