@@ -21,6 +21,32 @@
 
 namespace holoscan {
 
+void Resource::initialize() {
+  Component::initialize();
+
+  if (!spec_) {
+    HOLOSCAN_LOG_ERROR("No component spec for Resource '{}'", name());
+    return;
+  }
+
+  // Set arguments
+  auto& params = spec_->params();
+  for (auto& arg : args_) {
+    // Find if arg.name() is in spec.params()
+    if (params.find(arg.name()) == params.end()) {
+      HOLOSCAN_LOG_WARN("Argument '{}' not found in spec_->params()", arg.name());
+      continue;
+    }
+
+    // Set arg.value() to spec.params()[arg.name()]
+    auto& param_wrap = params[arg.name()];
+
+    HOLOSCAN_LOG_TRACE("Resource '{}':: setting argument '{}'", name(), arg.name());
+
+    ArgumentSetter::set_param(param_wrap, arg);
+  }
+}
+
 YAML::Node Resource::to_yaml_node() const {
   YAML::Node node = Component::to_yaml_node();
   if (spec_) {

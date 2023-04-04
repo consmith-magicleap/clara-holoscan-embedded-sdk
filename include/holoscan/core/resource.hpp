@@ -165,6 +165,8 @@ class Resource : public Component {
 
   using Component::add_arg;
 
+  void initialize() override;
+
   /**
    * @brief Define the resource specification.
    *

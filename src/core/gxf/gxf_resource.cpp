@@ -66,27 +66,8 @@ void GXFResource::initialize() {
     return;
   }
 
-  auto& spec = *spec_;
-
-  // Set arguments
-  auto& params = spec.params();
-  for (auto& arg : args_) {
-    // Find if arg.name() is in spec.params()
-    if (params.find(arg.name()) == params.end()) {
-      HOLOSCAN_LOG_WARN("Argument '{}' not found in spec_->params()", arg.name());
-      continue;
-    }
-
-    // Set arg.value() to spec.params()[arg.name()]
-    auto& param_wrap = params[arg.name()];
-
-    HOLOSCAN_LOG_TRACE("GXFResource '{}':: setting argument '{}'", name(), arg.name());
-
-    ArgumentSetter::set_param(param_wrap, arg);
-  }
-
   // Set Handler parameters
-  for (auto& [key, param_wrap] : params) {
+  for (auto& [key, param_wrap] : spec_->params()) {
     code = ::holoscan::gxf::GXFParameterAdaptor::set_param(
         gxf_context_, gxf_cid_, key.c_str(), param_wrap);
     // TODO: handle error
