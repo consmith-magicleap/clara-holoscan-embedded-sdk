@@ -60,8 +60,10 @@ class Vulkan {
    * @param window    window to use
    * @param font_path path to font file for text rendering, if not set the default font is used
    * @param font_size_in_pixels size of the font bitmaps
+   * @param background_zero_alpha if true, set the background alpha value to 0
    */
-  void setup(Window* window, const std::string& font_path, float font_size_in_pixels);
+  void setup(Window* window, const std::string& font_path, float font_size_in_pixels,
+             bool background_zero_alpha);
 
   /**
    * @return the window used by Vulkan

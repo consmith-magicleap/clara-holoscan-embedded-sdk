@@ -24,9 +24,11 @@ namespace holoscan::viz {
 
 /// Flags passed to the init function
 typedef enum {
-  NONE = 0x00000000,        ///< none
-  FULLSCREEN = 0x00000001,  ///< switch the app to full screen mode
-  HEADLESS = 0x00000002     ///< run in headless mode
+  NONE = 0x00000000,                   ///< none
+  FULLSCREEN = 0x00000001,             ///< switch the app to full screen mode
+  HEADLESS = 0x00000002,               ///< run in headless mode
+  BACKGROUND_ZERO_ALPHA = 0x00000004,  ///< set the background alpha value to 0 (for use when
+                                       ///  compositing Holoviz output externally).
 } InitFlags;
 
 }  // namespace holoscan::viz

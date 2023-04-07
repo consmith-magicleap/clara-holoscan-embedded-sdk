@@ -130,7 +130,8 @@ class Vulkan::Impl {
   Impl() = default;
   virtual ~Impl();
 
-  void setup(Window* window, const std::string& font_path, float font_size_in_pixels);
+  void setup(Window* window, const std::string& font_path, float font_size_in_pixels,
+             bool background_zero_alpha);
 
   Window* get_window() const;
 
@@ -306,6 +307,8 @@ class Vulkan::Impl {
   };
   std::list<TransferJob> transfer_jobs_;
 
+  vk::ClearColorValue clear_color_;
+
   vk::UniquePipelineLayout image_pipeline_layout_;
   vk::UniquePipelineLayout image_lut_pipeline_layout_;
   vk::UniquePipelineLayout geometry_pipeline_layout_;
@@ -364,7 +367,8 @@ Vulkan::Impl::~Impl() {
   }
 }
 
-void Vulkan::Impl::setup(Window* window, const std::string& font_path, float font_size_in_pixels) {
+void Vulkan::Impl::setup(Window* window, const std::string& font_path, float font_size_in_pixels,
+                         bool background_zero_alpha) {
   window_ = window;
 
   // Initialize instance independent function pointers
@@ -498,6 +502,9 @@ void Vulkan::Impl::setup(Window* window, const std::string& font_path, float fon
     cmd_buf_get.submitAndWait(cmd_buf);
     nvvk_.alloc_.finalizeAndReleaseStaging();
   }
+
+  clear_color_ =
+      vk::ClearColorValue(std::array<float, 4>({0.f, 0.f, 0.f, background_zero_alpha ? 0.f : 1.f}));
 
   // create the descriptor sets
   desc_set_layout_bind_.addBinding(bindings_offset_texture_,
@@ -884,7 +891,7 @@ void Vulkan::Impl::begin_render_pass() {
 
   // Clearing values
   std::array<vk::ClearValue, 2> clear_values;
-  clear_values[0].color = vk::ClearColorValue(std::array<float, 4>({0.f, 0.f, 0.f, 1.f}));
+  clear_values[0].color = clear_color_;
   clear_values[1].depthStencil = vk::ClearDepthStencilValue(1.0f, 0);
 
   // Begin rendering
@@ -2401,8 +2408,9 @@ Vulkan::Vulkan() : impl_(new Vulkan::Impl) {}
 
 Vulkan::~Vulkan() {}
 
-void Vulkan::setup(Window* window, const std::string& font_path, float font_size_in_pixels) {
-  impl_->setup(window, font_path, font_size_in_pixels);
+void Vulkan::setup(Window* window, const std::string& font_path, float font_size_in_pixels,
+                   bool background_zero_alpha) {
+  impl_->setup(window, font_path, font_size_in_pixels, background_zero_alpha);
 }
 
 Window* Vulkan::get_window() const {
