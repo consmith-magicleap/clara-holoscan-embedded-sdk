@@ -1312,6 +1312,11 @@ vk::UniquePipeline Vulkan::Impl::create_pipeline(
   // disable culling
   state.rasterizationState.cullMode = vk::CullModeFlagBits::eNone;
 
+  // smooth line rasterization
+  vk::PipelineRasterizationLineStateCreateInfoEXT line_state;
+  line_state.lineRasterizationMode = vk::LineRasterizationModeEXT::eRectangularSmooth;
+  state.rasterizationState.pNext = &line_state;
+
   // enable blending
   vk::PipelineColorBlendAttachmentState color_blend_attachment_state;
   color_blend_attachment_state.colorWriteMask =
