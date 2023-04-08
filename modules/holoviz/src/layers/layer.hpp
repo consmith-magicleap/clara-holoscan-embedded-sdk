@@ -20,6 +20,9 @@
 
 #include <cstdint>
 #include <memory>
+#include <vector>
+
+#include "holoviz/view.hpp"
 
 namespace holoscan::viz {
 
@@ -80,6 +83,18 @@ class Layer {
    * @param opacity   new layer opacity
    */
   virtual void set_opacity(float opacity);
+
+  /**
+   * @returns  the layer views
+   */
+  const std::vector<View>& get_views() const;
+
+  /**
+   * Set the layer views.
+   *
+   * @param views   new layer views
+   */
+  void set_views(size_t view_count, const View* views);
 
   /**
    * Checks if a layer can be reused (properties have to match).

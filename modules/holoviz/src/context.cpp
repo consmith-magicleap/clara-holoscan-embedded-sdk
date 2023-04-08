@@ -260,6 +260,8 @@ void Context::end_layer() {
       ///       the 'soft' parameters to the re-used layer
       (*it)->set_opacity(impl_->active_layer_->get_opacity());
       (*it)->set_priority(impl_->active_layer_->get_priority());
+      (*it)->set_views(impl_->active_layer_->get_views().size(),
+                       impl_->active_layer_->get_views().data());
 
       // replace the current active layer with the cached item
       impl_->active_layer_ = std::move(*it);

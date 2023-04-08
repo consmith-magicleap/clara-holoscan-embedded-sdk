@@ -23,6 +23,8 @@
 #include <cstdint>
 #include <memory>
 
+#include <nvmath/nvmath.h>
+
 #include "layer.hpp"
 
 #include "../holoviz/depth_map_render_mode.hpp"
@@ -112,6 +114,8 @@ class GeometryLayer : public Layer {
   ///@}
 
  private:
+  void render_view(Vulkan* vulkan, const nvmath::mat4f& view_matrix_3d);
+
   struct Impl;
   std::shared_ptr<Impl> impl_;
 };

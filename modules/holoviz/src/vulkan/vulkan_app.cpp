@@ -146,6 +146,8 @@ class Vulkan::Impl {
   uint32_t get_active_image_index() const { return fb_sequence_.get_active_image_index(); }
   const std::vector<vk::UniqueCommandBuffer>& get_command_buffers() { return command_buffers_; }
 
+  void set_viewport(uint32_t x, uint32_t y, uint32_t width, uint32_t height);
+
   Texture* create_texture_for_cuda_interop(uint32_t width, uint32_t height, ImageFormat format,
                                            vk::Filter filter, bool normalized);
   Texture* create_texture(uint32_t width, uint32_t height, ImageFormat format, size_t data_size,
@@ -1486,6 +1488,21 @@ UniqueCUexternalSemaphore Vulkan::Impl::import_semaphore_to_cuda(vk::Semaphore s
   return cuda_semaphore;
 }
 
+void Vulkan::Impl::set_viewport(uint32_t x, uint32_t y, uint32_t width, uint32_t height) {
+  const vk::CommandBuffer cmd_buf = command_buffers_[get_active_image_index()].get();
+
+  vk::Viewport viewport{static_cast<float>(x),
+                        static_cast<float>(y),
+                        static_cast<float>(width),
+                        static_cast<float>(height),
+                        0.0f,
+                        1.0f};
+  cmd_buf.setViewport(0, viewport);
+
+  vk::Rect2D scissor{{static_cast<int32_t>(x), static_cast<int32_t>(y)}, {width, height}};
+  cmd_buf.setScissor(0, scissor);
+}
+
 Vulkan::Texture* Vulkan::Impl::create_texture_for_cuda_interop(uint32_t width, uint32_t height,
                                                                ImageFormat format,
                                                                vk::Filter filter, bool normalized) {
@@ -2435,6 +2452,10 @@ void Vulkan::end_render_pass() {
 
 vk::CommandBuffer Vulkan::get_command_buffer() {
   return impl_->get_command_buffers()[impl_->get_active_image_index()].get();
+}
+
+void Vulkan::set_viewport(uint32_t x, uint32_t y, uint32_t width, uint32_t height) {
+  impl_->set_viewport(x, y, width, height);
 }
 
 Vulkan::Texture* Vulkan::create_texture_for_cuda_interop(uint32_t width, uint32_t height,

@@ -101,6 +101,14 @@ class Vulkan {
   vk::CommandBuffer get_command_buffer();
 
   /**
+   * Set the viewport for subsequent draw commands.
+   *
+   * @param x, y              the viewport’s upper left corner
+   * @param width, height     the viewport’s size
+   */
+  void set_viewport(uint32_t x, uint32_t y, uint32_t width, uint32_t height);
+
+  /**
    * Create a texture to be used for interop with Cuda, see ::upload_to_texture.
    * Destroy with ::destroy_texture.
    *

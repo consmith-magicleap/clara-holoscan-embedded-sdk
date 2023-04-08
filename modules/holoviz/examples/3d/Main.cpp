@@ -22,9 +22,18 @@
 #include <memory>
 #include <thread>
 
+#include <nvmath/nvmath.h>
+
 #include <holoviz/holoviz.hpp>
 
 namespace viz = holoscan::viz;
+
+constexpr int width = 1024;
+constexpr int height = 768;
+
+enum class ViewMode { FOUR_VIEWS, SINGLE_VIEW };
+static const char* view_mode_items[]{"Four Views", "Single View"};
+ViewMode current_view_mode = ViewMode::FOUR_VIEWS;
 
 bool unlimited_fps = false;
 float fps = 15.f;
@@ -32,7 +41,70 @@ float fps = 15.f;
 void tick() {
   viz::Begin();
 
+  viz::BeginImGuiLayer();
+
+  viz::LayerPriority(11);
+
+  ImGui::Begin("Options", nullptr, ImGuiWindowFlags_AlwaysAutoResize);
+
+  ImGui::Combo("View Mode",
+               reinterpret_cast<int*>(&current_view_mode),
+               view_mode_items,
+               IM_ARRAYSIZE(view_mode_items));
+
+  ImGui::End();
+
+  viz::EndLayer();
+
   viz::BeginGeometryLayer();
+
+  if (current_view_mode == ViewMode::FOUR_VIEWS) {
+    std::array<viz::View, 4> views = {
+        viz::View{
+            .viewport_offset = {0, 0},
+            .viewport_size = {width / 2, height / 2},
+        },
+        viz::View{
+            .viewport_offset = {width / 2, 0},
+            .viewport_size = {width / 2, height / 2},
+            .camera = viz::Camera(),
+        },
+        viz::View{
+            .viewport_offset = {0, height / 2},
+            .viewport_size = {width / 2, height / 2},
+            .camera = viz::Camera(),
+        },
+        viz::View{
+            .viewport_offset = {width / 2, height / 2},
+            .viewport_size = {width / 2, height / 2},
+            .camera = viz::Camera(),
+        },
+    };
+
+    nvmath::mat4f camera_1 = nvmath::look_at(
+        nvmath::vec3f{1.f, 0.f, 0.0f}, nvmath::vec3f{0.f, 0.f, 0.f}, nvmath::vec3f{0.f, 1.f, 0.f});
+    nvmath::mat4f camera_2 = nvmath::look_at(
+        nvmath::vec3f{0.f, 0.f, 1.0f}, nvmath::vec3f{0.f, 0.f, 0.f}, nvmath::vec3f{0.f, 1.f, 0.f});
+    nvmath::mat4f camera_3 = nvmath::look_at(
+        nvmath::vec3f{0.f, 1.f, 0.0f}, nvmath::vec3f{0.f, 0.f, 0.f}, nvmath::vec3f{0.f, 0.f, -1.f});
+    memcpy(views[1].camera->view_matrix_col_major.data(), camera_1.mat_array, 16 * sizeof(float));
+    memcpy(views[2].camera->view_matrix_col_major.data(), camera_2.mat_array, 16 * sizeof(float));
+    memcpy(views[3].camera->view_matrix_col_major.data(), camera_3.mat_array, 16 * sizeof(float));
+
+    nvmath::mat4f projection =
+        nvmath::perspectiveVK(/*fovy=*/90.f, /*aspect=*/1.0f, /*n=*/0.001f, /*f=*/100.f);
+    memcpy(views[1].camera->projection_matrix_col_major.data(),
+           projection.mat_array,
+           16 * sizeof(float));
+    memcpy(views[2].camera->projection_matrix_col_major.data(),
+           projection.mat_array,
+           16 * sizeof(float));
+    memcpy(views[3].camera->projection_matrix_col_major.data(),
+           projection.mat_array,
+           16 * sizeof(float));
+
+    viz::LayerViews(views.size(), views.data());
+  }
 
   {
     const float data[]{
@@ -111,7 +183,7 @@ int main(int argc, char** argv) {
   ImGui::CreateContext();
   viz::ImGuiSetCurrentContext(ImGui::GetCurrentContext());
 
-  viz::Init(1024, 768, "Holoviz 3D Example");
+  viz::Init(width, height, "Holoviz 3D Example");
 
   while (!viz::WindowShouldClose()) {
     if (!viz::WindowIsMinimized()) {

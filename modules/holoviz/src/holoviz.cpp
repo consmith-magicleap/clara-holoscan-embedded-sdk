@@ -137,6 +137,10 @@ void LayerPriority(int32_t priority) {
   Context::get().get_active_layer()->set_priority(priority);
 }
 
+void LayerViews(size_t view_count, const View* views) {
+  Context::get().get_active_layer()->set_views(view_count, views);
+}
+
 void EndLayer() {
   Context::get().end_layer();
 }

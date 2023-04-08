@@ -684,14 +684,41 @@ void GeometryLayer::end(Vulkan* vulkan) {
 }
 
 void GeometryLayer::render(Vulkan* vulkan) {
+  if (get_views().empty()) {
+    // render the default view.
+    nvmath::mat4f view_matrix_3d;
+    vulkan->get_window()->get_view_matrix(&view_matrix_3d);
+    render_view(vulkan, view_matrix_3d);
+  } else {
+    for (const View& view : get_views()) {
+      vulkan->set_viewport(view.viewport_offset[0],
+                           view.viewport_offset[1],
+                           view.viewport_size[0],
+                           view.viewport_size[1]);
+      nvmath::mat4f view_matrix_3d;
+      if (view.camera.has_value()) {
+        nvmath::mat4f view_matrix(view.camera->view_matrix_col_major.data());
+        nvmath::mat4f projection_matrix(view.camera->projection_matrix_col_major.data());
+        view_matrix_3d = projection_matrix * view_matrix;
+      } else {
+        vulkan->get_window()->get_view_matrix(&view_matrix_3d);
+      }
+      render_view(vulkan, view_matrix_3d);
+    }
+    // reset the viewport
+    uint32_t width;
+    uint32_t height;
+    vulkan->get_window()->get_framebuffer_size(&width, &height);
+    vulkan->set_viewport(0, 0, width, height);
+  }
+}
+
+void GeometryLayer::render_view(Vulkan* vulkan, const nvmath::mat4f& view_matrix_3d) {
   // setup the 2D view matrix in a way that geometry coordinates are in the range [0...1]
   nvmath::mat4f view_matrix_2d;
   view_matrix_2d.identity();
   view_matrix_2d.scale({2.f, 2.f, 1.f});
   view_matrix_2d.translate({-.5f, -.5f, 0.f});
-
-  nvmath::mat4f view_matrix_3d;
-  vulkan->get_window()->get_view_matrix(&view_matrix_3d);
 
   // draw 2D geometry primitives
   for (auto&& primitive : impl_->primitives_) {

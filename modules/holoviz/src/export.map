@@ -53,6 +53,7 @@
 
             "holoscan::viz::LayerOpacity(float)";
             "holoscan::viz::LayerPriority(int)";
+            "holoscan::viz::LayerViews(unsigned long, holoscan::viz::View const*)";
             "holoscan::viz::LayerViewCamera(holoscan::viz::Vector3f*, holoscan::viz::Vector3f*, holoscan::viz::Vector3f*)";
 
             "holoscan::viz::EndLayer()";

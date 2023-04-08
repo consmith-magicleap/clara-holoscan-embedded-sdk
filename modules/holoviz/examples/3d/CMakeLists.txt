@@ -26,4 +26,5 @@ target_link_libraries(${PROJECT_NAME}
     PRIVATE
         holoscan::viz
         holoscan::viz::imgui
+        nvpro_core
     )
