@@ -197,7 +197,6 @@ class Vulkan::Impl {
  private:
   void init_im_gui(const std::string& font_path, float font_size_in_pixels);
   void create_framebuffer_sequence();
-  void create_depth_buffer();
   void create_render_pass();
 
   /**
@@ -284,21 +283,12 @@ class Vulkan::Impl {
   std::vector<vk::UniqueCommandBuffer> command_buffers_;
   /// Fences per nb element in Swapchain
   std::vector<vk::UniqueFence> wait_fences_;
-  /// Depth/Stencil
-  vk::UniqueImage depth_image_;
-  /// Depth/Stencil
-  vk::UniqueDeviceMemory depth_memory_;
-  /// Depth/Stencil
-  vk::UniqueImageView depth_view_;
   /// Base render pass
   vk::UniqueRenderPass render_pass_;
   /// Size of the window
   vk::Extent2D size_{0, 0};
   /// Cache for pipeline/shaders
   vk::UniquePipelineCache pipeline_cache_;
-
-  /// Depth buffer format
-  vk::Format depth_format_{vk::Format::eUndefined};
 
   class TransferJob {
    public:
@@ -441,23 +431,6 @@ void Vulkan::Impl::setup(Window* window, const std::string& font_path, float fon
   // Initialize device-specific function pointers function pointers
   VULKAN_HPP_DEFAULT_DISPATCHER.init(device_);
 
-  // Find the most suitable depth format
-  {
-    const vk::FormatFeatureFlagBits feature = vk::FormatFeatureFlagBits::eDepthStencilAttachment;
-    for (const auto& f :
-         {vk::Format::eD24UnormS8Uint, vk::Format::eD32SfloatS8Uint, vk::Format::eD16UnormS8Uint}) {
-      vk::FormatProperties format_prop;
-      physical_device_.getFormatProperties(f, &format_prop);
-      if ((format_prop.optimalTilingFeatures & feature) == feature) {
-        depth_format_ = f;
-        break;
-      }
-    }
-    if (depth_format_ == vk::Format::eUndefined) {
-      throw std::runtime_error("Could not find a suitable depth format.");
-    }
-  }
-
   // create a surface, headless windows don't have a surface
   surface_ = vk::UniqueSurfaceKHR(window_->create_surface(physical_device_, instance_), instance_);
   if (surface_) {
@@ -477,7 +450,6 @@ void Vulkan::Impl::setup(Window* window, const std::string& font_path, float fon
   nvvk_.export_alloc_initialized_ = true;
 
   create_framebuffer_sequence();
-  create_depth_buffer();
   create_render_pass();
   create_frame_buffers();
 
@@ -1067,97 +1039,20 @@ void Vulkan::Impl::create_framebuffer_sequence() {
 #endif  // _DEBUG
 }
 
-void Vulkan::Impl::create_depth_buffer() {
-  depth_view_.reset();
-  depth_image_.reset();
-  depth_memory_.reset();
-
-  // Depth information
-  const vk::ImageAspectFlags aspect =
-      vk::ImageAspectFlagBits::eDepth | vk::ImageAspectFlagBits::eStencil;
-  vk::ImageCreateInfo depth_stencil_create_info;
-  depth_stencil_create_info.imageType = vk::ImageType::e2D;
-  depth_stencil_create_info.extent = vk::Extent3D{size_.width, size_.height, 1};
-  depth_stencil_create_info.format = depth_format_;
-  depth_stencil_create_info.mipLevels = 1;
-  depth_stencil_create_info.arrayLayers = 1;
-  depth_stencil_create_info.samples = vk::SampleCountFlagBits::e1;
-  depth_stencil_create_info.usage =
-      vk::ImageUsageFlagBits::eDepthStencilAttachment | vk::ImageUsageFlagBits::eTransferSrc;
-  // Create the depth image
-  depth_image_ = device_.createImageUnique(depth_stencil_create_info);
-
-#ifdef _DEBUG
-  vk::DebugUtilsObjectNameInfoEXT name_info;
-  name_info.objectHandle = (uint64_t)VkImage(depth_image_.get());
-  name_info.objectType = vk::ObjectType::eImage;
-  name_info.pObjectName = R"(Holoviz)";
-  device_.setDebugUtilsObjectNameEXT(name_info);
-#endif  // _DEBUG
-
-  // Allocate the memory
-  const vk::MemoryRequirements mem_reqs = device_.getImageMemoryRequirements(depth_image_.get());
-  vk::MemoryAllocateInfo mem_alloc_info;
-  mem_alloc_info.allocationSize = mem_reqs.size;
-  mem_alloc_info.memoryTypeIndex =
-      get_memory_type(mem_reqs.memoryTypeBits, vk::MemoryPropertyFlagBits::eDeviceLocal);
-  depth_memory_ = device_.allocateMemoryUnique(mem_alloc_info);
-
-  // Bind image and memory
-  device_.bindImageMemory(depth_image_.get(), depth_memory_.get(), 0);
-
-  const vk::CommandBuffer cmd_buffer = create_temp_cmd_buffer();
-
-  // Put barrier on top, Put barrier inside setup command buffer
-  vk::ImageSubresourceRange subresource_range;
-  subresource_range.aspectMask = aspect;
-  subresource_range.levelCount = 1;
-  subresource_range.layerCount = 1;
-  vk::ImageMemoryBarrier image_memory_barrier;
-  image_memory_barrier.oldLayout = vk::ImageLayout::eUndefined;
-  image_memory_barrier.newLayout = vk::ImageLayout::eDepthStencilAttachmentOptimal;
-  image_memory_barrier.image = depth_image_.get();
-  image_memory_barrier.subresourceRange = subresource_range;
-  image_memory_barrier.srcAccessMask = vk::AccessFlags();
-  image_memory_barrier.dstAccessMask = vk::AccessFlagBits::eDepthStencilAttachmentWrite;
-  const vk::PipelineStageFlags src_stage_mask = vk::PipelineStageFlagBits::eTopOfPipe;
-  const vk::PipelineStageFlags destStageMask = vk::PipelineStageFlagBits::eEarlyFragmentTests;
-
-  cmd_buffer.pipelineBarrier(src_stage_mask,
-                             destStageMask,
-                             vk::DependencyFlags(),
-                             0,
-                             nullptr,
-                             0,
-                             nullptr,
-                             1,
-                             &image_memory_barrier);
-  submit_temp_cmd_buffer(cmd_buffer);
-
-  // Setting up the view
-  vk::ImageViewCreateInfo depth_stencil_view;
-  depth_stencil_view.viewType = vk::ImageViewType::e2D;
-  depth_stencil_view.format = depth_format_;
-  depth_stencil_view.subresourceRange = subresource_range;
-  depth_stencil_view.image = depth_image_.get();
-  depth_view_ = device_.createImageViewUnique(depth_stencil_view);
-}
-
 void Vulkan::Impl::create_render_pass() {
   render_pass_.reset();
 
   std::array<vk::AttachmentDescription, 2> attachments;
   // Color attachment
-  attachments[0].format = fb_sequence_.get_format();
+  attachments[0].format = fb_sequence_.get_color_format();
   attachments[0].loadOp = vk::AttachmentLoadOp::eClear;
   attachments[0].finalLayout =
       surface_ ? vk::ImageLayout::ePresentSrcKHR : vk::ImageLayout::eColorAttachmentOptimal;
   attachments[0].samples = vk::SampleCountFlagBits::e1;
 
   // Depth attachment
-  attachments[1].format = depth_format_;
+  attachments[1].format = fb_sequence_.get_depth_format();
   attachments[1].loadOp = vk::AttachmentLoadOp::eClear;
-  attachments[1].stencilLoadOp = vk::AttachmentLoadOp::eClear;
   attachments[1].finalLayout = vk::ImageLayout::eDepthStencilAttachmentOptimal;
   attachments[1].samples = vk::SampleCountFlagBits::e1;
 
@@ -1220,8 +1115,8 @@ void Vulkan::Impl::create_frame_buffers() {
 
   // Create frame buffers for every swap chain image
   for (uint32_t i = 0; i < fb_sequence_.get_image_count(); i++) {
-    attachments[0] = fb_sequence_.get_image_view(i);
-    attachments[1] = depth_view_.get();
+    attachments[0] = fb_sequence_.get_color_image_view(i);
+    attachments[1] = fb_sequence_.get_depth_image_view(i);
     framebuffers_.push_back(device_.createFramebufferUnique(framebuffer_create_info));
   }
 
@@ -1259,7 +1154,6 @@ void Vulkan::Impl::on_framebuffer_size(int w, int h) {
   }
 
   // Recreating other resources
-  create_depth_buffer();
   create_frame_buffers();
 }
 
@@ -1405,6 +1299,10 @@ static void format_info(ImageFormat format, uint32_t* src_channels, uint32_t* ds
       *src_channels = *dst_channels = 4u;
       *component_size = sizeof(uint32_t);
       break;
+    case ImageFormat::D32_SFLOAT:
+      *src_channels = *dst_channels = 1u;
+      *component_size = sizeof(uint32_t);
+      break;
     default:
       throw std::runtime_error("Unhandled image format.");
   }
@@ -1455,6 +1353,9 @@ static vk::Format to_vulkan_format(ImageFormat format) {
       break;
     case ImageFormat::R32G32B32A32_SFLOAT:
       vk_format = vk::Format::eR32G32B32A32Sfloat;
+      break;
+    case ImageFormat::D32_SFLOAT:
+      vk_format = vk::Format::eD32Sfloat;
       break;
     default:
       throw std::runtime_error("Unhandled image format.");
@@ -2327,11 +2228,27 @@ void Vulkan::Impl::draw_indexed(vk::PrimitiveTopology topology,
 
 void Vulkan::Impl::read_framebuffer(ImageFormat fmt, uint32_t width, uint32_t height,
                                     size_t buffer_size, CUdeviceptr device_ptr, CUstream stream) {
-  if (fmt != ImageFormat::R8G8B8A8_UNORM) {
-    throw std::runtime_error("Unsupported image format, supported formats: R8G8B8A8_UNORM.");
+  vk::Image image;
+  vk::Format image_format;
+  vk::ImageAspectFlags image_aspect;
+  vk::ImageLayout image_layout;
+  if (fmt == ImageFormat::R8G8B8A8_UNORM) {
+    image = fb_sequence_.get_active_color_image();
+    image_format = fb_sequence_.get_color_format();
+    image_aspect = vk::ImageAspectFlagBits::eColor;
+    image_layout =
+        surface_ ? vk::ImageLayout::ePresentSrcKHR : vk::ImageLayout::eColorAttachmentOptimal;
+  } else if (fmt == ImageFormat::D32_SFLOAT) {
+    image = fb_sequence_.get_active_depth_image();
+    image_format = fb_sequence_.get_depth_format();
+    image_aspect = vk::ImageAspectFlagBits::eDepth;
+    image_layout = vk::ImageLayout::eDepthStencilAttachmentOptimal;
+  } else {
+    throw std::runtime_error(
+        "Unsupported image format, supported formats: R8G8B8A8_UNORM, D32_SFLOAT.");
   }
 
-  const vk::Format vk_format = to_vulkan_format(fmt);
+  const vk::Format out_vk_format = to_vulkan_format(fmt);
   uint32_t src_channels, dst_channels, component_size;
   format_info(fmt, &src_channels, &dst_channels, &component_size);
 
@@ -2351,15 +2268,11 @@ void Vulkan::Impl::read_framebuffer(ImageFormat fmt, uint32_t width, uint32_t he
 
   // Make the image layout vk::ImageLayout::eTransferSrcOptimal to copy to buffer
   vk::ImageSubresourceRange subresource_range;
-  subresource_range.aspectMask = vk::ImageAspectFlagBits::eColor;
+  subresource_range.aspectMask = image_aspect;
   subresource_range.levelCount = 1;
   subresource_range.layerCount = 1;
   nvvk::cmdBarrierImageLayout(
-      cmd_buf,
-      fb_sequence_.get_active_image(),
-      surface_ ? vk::ImageLayout::ePresentSrcKHR : vk::ImageLayout::eColorAttachmentOptimal,
-      vk::ImageLayout::eTransferSrcOptimal,
-      subresource_range);
+      cmd_buf, image, image_layout, vk::ImageLayout::eTransferSrcOptimal, subresource_range);
 
   // allocate the buffer
   /// @todo keep the buffer and the mapping to Cuda to avoid allocations
@@ -2369,12 +2282,12 @@ void Vulkan::Impl::read_framebuffer(ImageFormat fmt, uint32_t width, uint32_t he
 
   // Copy the image to the buffer
   vk::BufferImageCopy copy_region;
-  copy_region.imageSubresource.aspectMask = vk::ImageAspectFlagBits::eColor;
+  copy_region.imageSubresource.aspectMask = image_aspect;
   copy_region.imageSubresource.layerCount = 1;
   copy_region.imageExtent.width = read_width;
   copy_region.imageExtent.height = read_height;
   copy_region.imageExtent.depth = 1;
-  cmd_buf.copyImageToBuffer(fb_sequence_.get_active_image(),
+  cmd_buf.copyImageToBuffer(image,
                             vk::ImageLayout::eTransferSrcOptimal,
                             transfer_buffer->buffer_.buffer,
                             1,
@@ -2382,11 +2295,7 @@ void Vulkan::Impl::read_framebuffer(ImageFormat fmt, uint32_t width, uint32_t he
 
   // Put back the image as it was
   nvvk::cmdBarrierImageLayout(
-      cmd_buf,
-      fb_sequence_.get_active_image(),
-      vk::ImageLayout::eTransferSrcOptimal,
-      surface_ ? vk::ImageLayout::ePresentSrcKHR : vk::ImageLayout::eColorAttachmentOptimal,
-      subresource_range);
+      cmd_buf, image, vk::ImageLayout::eTransferSrcOptimal, image_layout, subresource_range);
   /// @todo avoid wait, use semaphore to sync
   cmd_buf_get.submitAndWait(cmd_buf);
 
@@ -2394,7 +2303,7 @@ void Vulkan::Impl::read_framebuffer(ImageFormat fmt, uint32_t width, uint32_t he
   {
     const CudaService::ScopedPush cuda_context = CudaService::get().PushContext();
 
-    if (fb_sequence_.get_format() == vk::Format::eB8G8R8A8Unorm) {
+    if (image_format == vk::Format::eB8G8R8A8Unorm && out_vk_format == vk::Format::eR8G8B8A8Unorm) {
       ConvertB8G8R8A8ToR8G8B8A8(read_width,
                                 read_height,
                                 transfer_buffer->device_ptr_.get(),
@@ -2402,7 +2311,7 @@ void Vulkan::Impl::read_framebuffer(ImageFormat fmt, uint32_t width, uint32_t he
                                 device_ptr,
                                 width * dst_channels * component_size,
                                 stream);
-    } else if (fb_sequence_.get_format() == vk::Format::eR8G8B8A8Unorm) {
+    } else if (image_format == out_vk_format) {
       CUDA_MEMCPY2D memcpy2d{};
       memcpy2d.srcMemoryType = CU_MEMORYTYPE_DEVICE;
       memcpy2d.srcDevice = transfer_buffer->device_ptr_.get();

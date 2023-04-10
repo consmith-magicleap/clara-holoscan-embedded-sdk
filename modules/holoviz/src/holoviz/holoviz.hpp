@@ -381,11 +381,12 @@ void LayerViews(size_t view_count, const View* views);
 void EndLayer();
 
 /**
- * Read the framebuffer and store it to cuda device memory.
+ * Read an image from the framebuffer and store it to cuda device memory.
  *
- * Can only be called outside of Begin()/End().
+ * If fmt is a depth format, the depth image attachment of the framebuffer will be copied to
+ * device_ptr. Can only be called outside of Begin()/End().
  *
- * @param fmt           image format, currently only R8G8B8A8_UNORM is supported
+ * @param fmt           image format, currently only R8G8B8A8_UNORM and D32_SFLOAT are supported
  * @param width, height width and height of the region to read back, will be limited to the
  *                      framebuffer size if the framebuffer is smaller than that
  * @param buffer_size   size of the storage buffer in bytes
