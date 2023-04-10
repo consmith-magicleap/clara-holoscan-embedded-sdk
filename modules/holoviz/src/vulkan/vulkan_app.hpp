@@ -214,12 +214,13 @@ class Vulkan {
   /**
    * Draw a texture with an optional color lookup table.
    *
-   * @param texture     texture to draw
-   * @param lut         lookup table, can be nullptr
-   * @param opacity     opacity, 0.0 is transparent, 1.0 is opaque
-   * @param view_matrix view matrix
+   * @param texture       texture to draw
+   * @param depth_texture depth texture to draw, can be nullptr
+   * @param lut           lookup table, can be nullptr
+   * @param opacity       opacity, 0.0 is transparent, 1.0 is opaque
+   * @param view_matrix   view matrix
    */
-  void draw_texture(Texture* texture, Texture* lut, float opacity,
+  void draw_texture(Texture* texture, Texture* depth_texture, Texture* lut, float opacity,
                     const nvmath::mat4f& view_matrix = nvmath::mat4f(1));
 
   /**

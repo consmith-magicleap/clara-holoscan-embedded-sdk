@@ -35,7 +35,9 @@ struct ImageLayer::Impl {
         (lut_size_ == other.lut_size_) && (lut_format_ == other.lut_format_) &&
         (lut_data_ == other.lut_data_) && (lut_normalized_ == other.lut_normalized_) &&
         ((host_ptr_ != nullptr) == (other.device_ptr_ == 0)) &&
-        ((device_ptr_ != 0) == (other.host_ptr_ == nullptr))) {
+        ((device_ptr_ != 0) == (other.host_ptr_ == nullptr)) &&
+        (depth_format_ == other.depth_format_) && (depth_width_ == other.depth_width_) &&
+        (depth_height_ == other.depth_height_)) {
       // update the host pointer, Cuda device pointer and the cuda stream.
       // Data will be uploaded when drawing regardless if the layer is reused or not
       /// @todo this should be made explicit, first check if the layer can be reused and then
@@ -43,6 +45,8 @@ struct ImageLayer::Impl {
       other.host_ptr_ = host_ptr_;
       other.device_ptr_ = device_ptr_;
       other.cuda_stream_ = cuda_stream_;
+      other.depth_device_ptr_ = depth_device_ptr_;
+      other.depth_cuda_stream_ = depth_cuda_stream_;
       return true;
     }
 
@@ -57,6 +61,12 @@ struct ImageLayer::Impl {
   const void* host_ptr_ = nullptr;
   CUstream cuda_stream_ = 0;
 
+  ImageFormat depth_format_ = ImageFormat(-1);
+  uint32_t depth_width_ = 0;
+  uint32_t depth_height_ = 0;
+  CUdeviceptr depth_device_ptr_ = 0;
+  CUstream depth_cuda_stream_ = 0;
+
   uint32_t lut_size_ = 0;
   ImageFormat lut_format_ = ImageFormat(-1);
   std::vector<uint8_t> lut_data_;
@@ -65,6 +75,7 @@ struct ImageLayer::Impl {
   // internal state
   Vulkan* vulkan_ = nullptr;
   Vulkan::Texture* texture_ = nullptr;
+  Vulkan::Texture* depth_texture_ = nullptr;
   Vulkan::Texture* lut_texture_ = nullptr;
 };
 
@@ -79,6 +90,16 @@ ImageLayer::~ImageLayer() {
 
 void ImageLayer::image_cuda_device(uint32_t width, uint32_t height, ImageFormat fmt,
                                    CUdeviceptr device_ptr) {
+  // If a depth format is specified, use this image to write depth for the color image.
+  if (fmt == ImageFormat::D32_SFLOAT) {
+    impl_->depth_width_ = width;
+    impl_->depth_height_ = height;
+    impl_->depth_format_ = ImageFormat::R32_SFLOAT;  // use a color format for sampling
+    impl_->depth_device_ptr_ = device_ptr;
+    impl_->depth_cuda_stream_ = Context::get().get_cuda_stream();
+    return;
+  }
+
   if (impl_->host_ptr_) {
     throw std::runtime_error("Can't simultaneously specify device and host image for a layer.");
   }
@@ -118,14 +139,12 @@ bool ImageLayer::can_be_reused(Layer& other) const {
 }
 
 void ImageLayer::end(Vulkan* vulkan) {
+  impl_->vulkan_ = vulkan;
+
   if (impl_->device_ptr_) {
     // check if this is a reused layer, in this case
     //  we just have to upload the data to the texture
     if (!impl_->texture_) {
-      /// @todo need to remember Vulkan instance for destroying texture,
-      ///       destroy should probably be handled by Vulkan class
-      impl_->vulkan_ = vulkan;
-
       // check if we have a lut, if yes, the texture needs to
       //  be nearest sampled since it has index values
       const bool has_lut = !impl_->lut_data_.empty();
@@ -142,10 +161,6 @@ void ImageLayer::end(Vulkan* vulkan) {
     // check if this is a reused layer,
     //  in this case we just have to upload the data to the texture
     if (!impl_->texture_) {
-      /// @todo need to remember Vulkan instance for destroying texture,
-      ///       destroy should probably be handled by Vulkan class
-      impl_->vulkan_ = vulkan;
-
       // check if we have a lut, if yes, the texture needs to be
       //  nearest sampled since it has index values
       const bool has_lut = !impl_->lut_data_.empty();
@@ -160,6 +175,16 @@ void ImageLayer::end(Vulkan* vulkan) {
                                  has_lut ? vk::Filter::eNearest : vk::Filter::eLinear);
     }
     vulkan->upload_to_texture(impl_->host_ptr_, impl_->texture_);
+  }
+
+  if (impl_->depth_device_ptr_) {
+    // create depth texture if it does not already exist (when reusing a layer)
+    if (!impl_->depth_texture_) {
+      impl_->depth_texture_ = vulkan->create_texture_for_cuda_interop(
+          impl_->depth_width_, impl_->depth_height_, impl_->depth_format_, vk::Filter::eLinear);
+    }
+    vulkan->upload_to_texture(
+        impl_->depth_device_ptr_, impl_->depth_texture_, impl_->depth_cuda_stream_);
   }
 
   if (!impl_->lut_data_.empty() && !impl_->lut_texture_) {
@@ -178,7 +203,8 @@ void ImageLayer::end(Vulkan* vulkan) {
 void ImageLayer::render(Vulkan* vulkan) {
   if (impl_->texture_) {
     // draw
-    vulkan->draw_texture(impl_->texture_, impl_->lut_texture_, get_opacity());
+    vulkan->draw_texture(
+        impl_->texture_, impl_->depth_texture_, impl_->lut_texture_, get_opacity());
   }
 }
 

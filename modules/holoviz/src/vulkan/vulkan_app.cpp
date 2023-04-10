@@ -24,6 +24,7 @@
 #include <vulkan/spv/geometry_shader.glsl.vert.h>
 #include <vulkan/spv/geometry_text_shader.glsl.frag.h>
 #include <vulkan/spv/geometry_text_shader.glsl.vert.h>
+#include <vulkan/spv/image_depth_shader.glsl.frag.h>
 #include <vulkan/spv/image_lut_float_shader.glsl.frag.h>
 #include <vulkan/spv/image_lut_uint_shader.glsl.frag.h>
 #include <vulkan/spv/image_shader.glsl.frag.h>
@@ -166,7 +167,7 @@ class Vulkan::Impl {
 
   void destroy_buffer(Buffer* buffer);
 
-  void draw_texture(Texture* texture, Texture* lut, float opacity,
+  void draw_texture(Texture* texture, Texture* depth_texture, Texture* lut, float opacity,
                     const nvmath::mat4f& view_matrix);
 
   void draw(vk::PrimitiveTopology topology, uint32_t count, uint32_t first,
@@ -302,15 +303,20 @@ class Vulkan::Impl {
   vk::ClearColorValue clear_color_;
 
   vk::UniquePipelineLayout image_pipeline_layout_;
+  vk::UniquePipelineLayout image_depth_pipeline_layout_;
   vk::UniquePipelineLayout image_lut_pipeline_layout_;
   vk::UniquePipelineLayout geometry_pipeline_layout_;
   vk::UniquePipelineLayout geometry_text_pipeline_layout_;
 
   const uint32_t bindings_offset_texture_ = 0;
+  const uint32_t bindings_offset_texture_depth_ = 1;
   const uint32_t bindings_offset_texture_lut_ = 1;
 
   nvvk::DescriptorSetBindings desc_set_layout_bind_;
   vk::UniqueDescriptorSetLayout desc_set_layout_;
+
+  nvvk::DescriptorSetBindings desc_set_layout_bind_depth_;
+  vk::UniqueDescriptorSetLayout desc_set_layout_depth_;
 
   nvvk::DescriptorSetBindings desc_set_layout_bind_lut_;
   vk::UniqueDescriptorSetLayout desc_set_layout_lut_;
@@ -322,6 +328,7 @@ class Vulkan::Impl {
   vk::Sampler sampler_text_;
 
   vk::UniquePipeline image_pipeline_;
+  vk::UniquePipeline image_depth_pipeline_;
   vk::UniquePipeline image_lut_uint_pipeline_;
   vk::UniquePipeline image_lut_float_pipeline_;
 
@@ -490,6 +497,19 @@ void Vulkan::Impl::setup(Window* window, const std::string& font_path, float fon
                                          VK_DESCRIPTOR_SET_LAYOUT_CREATE_PUSH_DESCRIPTOR_BIT_KHR),
       device_);
 
+  desc_set_layout_bind_depth_.addBinding(bindings_offset_texture_,
+                                         VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+                                         1,
+                                         VK_SHADER_STAGE_FRAGMENT_BIT);
+  desc_set_layout_bind_depth_.addBinding(bindings_offset_texture_depth_,
+                                         VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+                                         1,
+                                         VK_SHADER_STAGE_FRAGMENT_BIT);
+  desc_set_layout_depth_ = vk::UniqueDescriptorSetLayout(
+      desc_set_layout_bind_depth_.createLayout(
+          device_, VK_DESCRIPTOR_SET_LAYOUT_CREATE_PUSH_DESCRIPTOR_BIT_KHR),
+      device_);
+
   desc_set_layout_bind_lut_.addBinding(bindings_offset_texture_,
                                        VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
                                        1,
@@ -564,6 +584,28 @@ void Vulkan::Impl::setup(Window* window, const std::string& font_path, float fon
                       {},
                       binding_description_float_3,
                       attribute_description_float_3);
+
+  // create the pipeline layout for images with depth
+  {
+    // Creating the Pipeline Layout
+    vk::PipelineLayoutCreateInfo create_info;
+    create_info.setLayoutCount = 1;
+    create_info.pSetLayouts = &desc_set_layout_lut_.get();
+    create_info.pushConstantRangeCount = 2;
+    create_info.pPushConstantRanges = push_constant_ranges;
+    image_depth_pipeline_layout_ = device_.createPipelineLayoutUnique(create_info);
+  }
+
+  image_depth_pipeline_ = create_pipeline(
+      image_depth_pipeline_layout_.get(),
+      image_shader_glsl_vert,
+      sizeof(image_shader_glsl_vert) / sizeof(image_shader_glsl_vert[0]),
+      image_depth_shader_glsl_frag,
+      sizeof(image_depth_shader_glsl_frag) / sizeof(image_depth_shader_glsl_frag[0]),
+      vk::PrimitiveTopology::eTriangleList,
+      {},
+      binding_description_float_3,
+      attribute_description_float_3);
 
   // create the pipeline layout for images with lut
   {
@@ -1911,8 +1953,8 @@ void Vulkan::Impl::destroy_buffer(Buffer* buffer) {
   delete buffer;
 }
 
-void Vulkan::Impl::draw_texture(Texture* texture, Texture* lut, float opacity,
-                                const nvmath::mat4f& view_matrix) {
+void Vulkan::Impl::draw_texture(Texture* texture, Texture* depth_texture, Texture* lut,
+                                float opacity, const nvmath::mat4f& view_matrix) {
   const vk::CommandBuffer cmd_buf = command_buffers_[get_active_image_index()].get();
 
   if (texture->state_ == Texture::State::UPLOADED) {
@@ -1929,7 +1971,24 @@ void Vulkan::Impl::draw_texture(Texture* texture, Texture* lut, float opacity,
 
   // update descriptor sets
   std::vector<vk::WriteDescriptorSet> writes;
-  if (lut) {
+  if (depth_texture) {
+    if (depth_texture->state_ == Texture::State::UPLOADED) {
+      // enqueue the semaphore signalled by Cuda to be waited on by rendering
+      nvvk_.batch_submission_.enqueueWait(depth_texture->upload_semaphore_.get(),
+                                          vk::PipelineStageFlagBits::eAllCommands);
+      // also signal the render semapore which will be waited on by Cuda
+      nvvk_.batch_submission_.enqueueSignal(depth_texture->render_semaphore_.get());
+      depth_texture->state_ = Texture::State::RENDERED;
+    }
+
+    pipeline = image_depth_pipeline_.get();
+    pipeline_layout = image_depth_pipeline_layout_.get();
+
+    writes.emplace_back(desc_set_layout_bind_depth_.makeWrite(
+        nullptr, bindings_offset_texture_, &texture->texture_.descriptor));
+    writes.emplace_back(desc_set_layout_bind_depth_.makeWrite(
+        nullptr, bindings_offset_texture_depth_, &depth_texture->texture_.descriptor));
+  } else if (lut) {
     if (lut->state_ == Texture::State::UPLOADED) {
       // enqueue the semaphore signalled by Cuda to be waited on by rendering
       nvvk_.batch_submission_.enqueueWait(lut->upload_semaphore_.get(),
@@ -1994,8 +2053,9 @@ void Vulkan::Impl::draw_texture(Texture* texture, Texture* lut, float opacity,
   // draw
   cmd_buf.drawIndexed(6, 1, 0, 0, 0);
 
-  // tag the texture and lut with the current fence
+  // tag the textures with the current fence
   texture->fence_ = wait_fences_[get_active_image_index()].get();
+  if (depth_texture) { depth_texture->fence_ = wait_fences_[get_active_image_index()].get(); }
   if (lut) { lut->fence_ = wait_fences_[get_active_image_index()].get(); }
 }
 
@@ -2414,9 +2474,9 @@ void Vulkan::destroy_buffer(Buffer* buffer) {
   impl_->destroy_buffer(buffer);
 }
 
-void Vulkan::draw_texture(Texture* texture, Texture* lut, float opacity,
+void Vulkan::draw_texture(Texture* texture, Texture* depth_texture, Texture* lut, float opacity,
                           const nvmath::mat4f& view_matrix) {
-  impl_->draw_texture(texture, lut, opacity, view_matrix);
+  impl_->draw_texture(texture, depth_texture, lut, opacity, view_matrix);
 }
 
 void Vulkan::draw(vk::PrimitiveTopology topology, uint32_t count, uint32_t first,
