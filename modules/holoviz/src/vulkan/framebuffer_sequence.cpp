@@ -31,6 +31,7 @@ FramebufferSequence::~FramebufferSequence() {
     swap_chain_.reset();
   } else {
     for (auto&& color_texture : color_textures_) { alloc_->destroy(color_texture); }
+    for (auto&& depth_texture : depth_textures_) { alloc_->destroy(depth_texture); }
     semaphores_.clear();
   }
 }
@@ -38,7 +39,12 @@ FramebufferSequence::~FramebufferSequence() {
 void FramebufferSequence::init(nvvk::ResourceAllocator* alloc, const vk::Device& device,
                                const vk::PhysicalDevice& physical_device, vk::Queue queue,
                                uint32_t queue_family_index, vk::SurfaceKHR surface) {
+  alloc_ = alloc;
+  device_ = device;
+  queue_family_index_ = queue_family_index;
+
   color_format_ = vk::Format::eR8G8B8A8Unorm;
+  depth_format_ = vk::Format::eD32Sfloat;
 
   if (surface) {
     // pick a preferred format or use the first available one
@@ -68,12 +74,7 @@ void FramebufferSequence::init(nvvk::ResourceAllocator* alloc, const vk::Device&
     // the color format might have changed when creating the swap chain
     color_format_ = vk::Format(swap_chain_->getFormat());
   } else {
-    device_ = device;
-    queue_family_index_ = queue_family_index;
-
     image_count_ = 3;
-
-    alloc_ = alloc;
 
     // create semaphores
     for (uint32_t i = 0; i < image_count_; ++i) {
@@ -110,12 +111,12 @@ void FramebufferSequence::update(uint32_t width, uint32_t height, vk::Extent2D* 
           vk::Extent2D{width, height},
           color_format_,
           vk::ImageUsageFlagBits::eColorAttachment | vk::ImageUsageFlagBits::eTransferSrc);
-      const nvvk::Image image = alloc_->createImage(color_create_info);
+      const nvvk::Image color_image = alloc_->createImage(color_create_info);
 
-      const vk::ImageViewCreateInfo image_view_info =
-          nvvk::makeImageViewCreateInfo(image.image, color_create_info);
+      const vk::ImageViewCreateInfo color_image_view_info =
+          nvvk::makeImageViewCreateInfo(color_image.image, color_create_info);
 
-      color_textures_[i] = alloc_->createTexture(image, image_view_info);
+      color_textures_[i] = alloc_->createTexture(color_image, color_image_view_info);
       {
         nvvk::CommandPool cmd_buf_get(device_, queue_family_index_);
         vk::CommandBuffer cmd_buf = cmd_buf_get.createCommandBuffer();
@@ -129,6 +130,34 @@ void FramebufferSequence::update(uint32_t width, uint32_t height, vk::Extent2D* 
       }
       color_textures_[i].descriptor.imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
     }
+  }
+
+  for (auto&& depth_texture : depth_textures_) { alloc_->destroy(depth_texture); }
+  depth_textures_.clear();
+  depth_textures_.resize(image_count_);
+  for (uint32_t i = 0; i < image_count_; ++i) {
+    const vk::ImageCreateInfo depth_create_info = nvvk::makeImage2DCreateInfo(
+        vk::Extent2D{width, height},
+        depth_format_,
+        vk::ImageUsageFlagBits::eDepthStencilAttachment | vk::ImageUsageFlagBits::eTransferSrc);
+    const nvvk::Image depth_image = alloc_->createImage(depth_create_info);
+
+    const vk::ImageViewCreateInfo depth_image_view_info =
+        nvvk::makeImageViewCreateInfo(depth_image.image, depth_create_info);
+
+    depth_textures_[i] = alloc_->createTexture(depth_image, depth_image_view_info);
+    {
+      nvvk::CommandPool cmd_buf_get(device_, queue_family_index_);
+      vk::CommandBuffer cmd_buf = cmd_buf_get.createCommandBuffer();
+
+      nvvk::cmdBarrierImageLayout(cmd_buf,
+                                  depth_textures_[i].image,
+                                  VK_IMAGE_LAYOUT_UNDEFINED,
+                                  VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL);
+
+      cmd_buf_get.submitAndWait(cmd_buf);
+    }
+    depth_textures_[i].descriptor.imageLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
   }
 }
 
@@ -148,12 +177,18 @@ uint32_t FramebufferSequence::get_active_image_index() const {
   return current_image_;
 }
 
-vk::ImageView FramebufferSequence::get_image_view(uint32_t i) const {
+vk::ImageView FramebufferSequence::get_color_image_view(uint32_t i) const {
   if (swap_chain_) { return swap_chain_->getImageView(i); }
 
   if (i >= color_textures_.size()) { throw std::runtime_error("Invalid image view index"); }
 
   return color_textures_[i].descriptor.imageView;
+}
+
+vk::ImageView FramebufferSequence::get_depth_image_view(uint32_t i) const {
+  if (i >= depth_textures_.size()) { throw std::runtime_error("Invalid image view index"); }
+
+  return depth_textures_[i].descriptor.imageView;
 }
 
 void FramebufferSequence::present(vk::Queue queue) {
@@ -176,10 +211,14 @@ vk::Semaphore FramebufferSequence::get_active_written_semaphore() const {
   return semaphores_[current_image_].get();
 }
 
-vk::Image FramebufferSequence::get_active_image() const {
+vk::Image FramebufferSequence::get_active_color_image() const {
   if (swap_chain_) { return swap_chain_->getActiveImage(); }
 
   return color_textures_[current_image_].image;
+}
+
+vk::Image FramebufferSequence::get_active_depth_image() const {
+  return depth_textures_[current_image_].image;
 }
 
 void FramebufferSequence::cmd_update_barriers(vk::CommandBuffer cmd) const {

@@ -112,7 +112,10 @@ Context::Context() : impl_(new Impl) {
 void Context::init(GLFWwindow* window, InitFlags flags) {
   impl_->window_.reset(new GLFWWindow(window));
   impl_->vulkan_.reset(new Vulkan);
-  impl_->vulkan_->setup(impl_->window_.get(), impl_->font_path_, impl_->font_size_in_pixels_);
+  impl_->vulkan_->setup(impl_->window_.get(),
+                        impl_->font_path_,
+                        impl_->font_size_in_pixels_,
+                        flags & InitFlags::BACKGROUND_ZERO_ALPHA);
   impl_->flags_ = flags;
 }
 
@@ -123,7 +126,10 @@ void Context::init(uint32_t width, uint32_t height, const char* title, InitFlags
     impl_->window_.reset(new GLFWWindow(width, height, title, flags));
   }
   impl_->vulkan_.reset(new Vulkan);
-  impl_->vulkan_->setup(impl_->window_.get(), impl_->font_path_, impl_->font_size_in_pixels_);
+  impl_->vulkan_->setup(impl_->window_.get(),
+                        impl_->font_path_,
+                        impl_->font_size_in_pixels_,
+                        flags & InitFlags::BACKGROUND_ZERO_ALPHA);
   impl_->flags_ = flags;
 }
 
@@ -131,7 +137,10 @@ void Context::init(const char* display_name, uint32_t width, uint32_t height, ui
                    InitFlags flags) {
   impl_->window_.reset(new ExclusiveWindow(display_name, width, height, refresh_rate, flags));
   impl_->vulkan_.reset(new Vulkan);
-  impl_->vulkan_->setup(impl_->window_.get(), impl_->font_path_, impl_->font_size_in_pixels_);
+  impl_->vulkan_->setup(impl_->window_.get(),
+                        impl_->font_path_,
+                        impl_->font_size_in_pixels_,
+                        flags & InitFlags::BACKGROUND_ZERO_ALPHA);
   impl_->flags_ = flags;
 }
 
@@ -251,6 +260,8 @@ void Context::end_layer() {
       ///       the 'soft' parameters to the re-used layer
       (*it)->set_opacity(impl_->active_layer_->get_opacity());
       (*it)->set_priority(impl_->active_layer_->get_priority());
+      (*it)->set_views(impl_->active_layer_->get_views().size(),
+                       impl_->active_layer_->get_views().data());
 
       // replace the current active layer with the cached item
       impl_->active_layer_ = std::move(*it);

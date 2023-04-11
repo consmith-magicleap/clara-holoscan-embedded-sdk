@@ -76,6 +76,7 @@ viz::Shutdown();
 #include "holoviz/image_format.hpp"
 #include "holoviz/init_flags.hpp"
 #include "holoviz/primitive_topology.hpp"
+#include "holoviz/view.hpp"
 
 // forward declaration of external types
 typedef struct GLFWwindow GLFWwindow;
@@ -365,16 +366,27 @@ void LayerOpacity(float opacity);
 void LayerPriority(int32_t priority);
 
 /**
+ * Set the layer views.
+ *
+ * If called, the layer content will be renderd to multiple viewports.
+ *
+ * @param view_count  number of views
+ * @param views       pointer to an array of views which should be drawn by this layer
+ */
+void LayerViews(size_t view_count, const View* views);
+
+/**
  * End the current layer.
  */
 void EndLayer();
 
 /**
- * Read the framebuffer and store it to cuda device memory.
+ * Read an image from the framebuffer and store it to cuda device memory.
  *
- * Can only be called outside of Begin()/End().
+ * If fmt is a depth format, the depth image attachment of the framebuffer will be copied to
+ * device_ptr. Can only be called outside of Begin()/End().
  *
- * @param fmt           image format, currently only R8G8B8A8_UNORM is supported
+ * @param fmt           image format, currently only R8G8B8A8_UNORM and D32_SFLOAT are supported
  * @param width, height width and height of the region to read back, will be limited to the
  *                      framebuffer size if the framebuffer is smaller than that
  * @param buffer_size   size of the storage buffer in bytes

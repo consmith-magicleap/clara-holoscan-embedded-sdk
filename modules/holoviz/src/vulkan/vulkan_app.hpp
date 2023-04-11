@@ -60,8 +60,10 @@ class Vulkan {
    * @param window    window to use
    * @param font_path path to font file for text rendering, if not set the default font is used
    * @param font_size_in_pixels size of the font bitmaps
+   * @param background_zero_alpha if true, set the background alpha value to 0
    */
-  void setup(Window* window, const std::string& font_path, float font_size_in_pixels);
+  void setup(Window* window, const std::string& font_path, float font_size_in_pixels,
+             bool background_zero_alpha);
 
   /**
    * @return the window used by Vulkan
@@ -97,6 +99,14 @@ class Vulkan {
    * @return vk::CommandBuffer
    */
   vk::CommandBuffer get_command_buffer();
+
+  /**
+   * Set the viewport for subsequent draw commands.
+   *
+   * @param x, y              the viewport’s upper left corner
+   * @param width, height     the viewport’s size
+   */
+  void set_viewport(uint32_t x, uint32_t y, uint32_t width, uint32_t height);
 
   /**
    * Create a texture to be used for interop with Cuda, see ::upload_to_texture.
@@ -204,12 +214,13 @@ class Vulkan {
   /**
    * Draw a texture with an optional color lookup table.
    *
-   * @param texture     texture to draw
-   * @param lut         lookup table, can be nullptr
-   * @param opacity     opacity, 0.0 is transparent, 1.0 is opaque
-   * @param view_matrix view matrix
+   * @param texture       texture to draw
+   * @param depth_texture depth texture to draw, can be nullptr
+   * @param lut           lookup table, can be nullptr
+   * @param opacity       opacity, 0.0 is transparent, 1.0 is opaque
+   * @param view_matrix   view matrix
    */
-  void draw_texture(Texture* texture, Texture* lut, float opacity,
+  void draw_texture(Texture* texture, Texture* depth_texture, Texture* lut, float opacity,
                     const nvmath::mat4f& view_matrix = nvmath::mat4f(1));
 
   /**

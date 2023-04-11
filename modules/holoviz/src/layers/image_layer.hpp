@@ -49,6 +49,11 @@ class ImageLayer : public Layer {
    *
    * If the image has a alpha value it's multiplied with the layer opacity.
    *
+   * If fmt is a depth format, the image will be interpreted as a depth image, and will be written
+   * to the depth buffer when rendering the color image from a separate invocation of image_*() for
+   * the same layer. This enables depth-compositing image layers with other Holoviz layers.
+   * Supported depth formats are: D32_SFLOAT.
+   *
    * @param width         width of the image
    * @param height        height of the image
    * @param fmt           image format

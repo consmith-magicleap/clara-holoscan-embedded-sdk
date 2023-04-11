@@ -22,6 +22,7 @@ namespace holoscan::viz {
 struct Layer::Impl {
   int32_t priority_ = 0;
   float opacity_ = 1.f;
+  std::vector<View> views_;
 };
 
 Layer::Layer(Type type) : type_(type), impl_(new Impl) {}
@@ -50,6 +51,14 @@ float Layer::get_opacity() const {
 
 void Layer::set_opacity(float opacity) {
   impl_->opacity_ = opacity;
+}
+
+const std::vector<View>& Layer::get_views() const {
+  return impl_->views_;
+}
+
+void Layer::set_views(size_t view_count, const View* views) {
+  impl_->views_.assign(views, views + view_count);
 }
 
 }  // namespace holoscan::viz

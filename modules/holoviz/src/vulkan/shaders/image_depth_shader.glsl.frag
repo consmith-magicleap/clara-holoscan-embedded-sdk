@@ -15,22 +15,32 @@
  * limitations under the License.
  */
 
-#ifndef HOLOSCAN_VIZ_HOLOVIZ_INIT_FLAGS_HPP
-#define HOLOSCAN_VIZ_HOLOVIZ_INIT_FLAGS_HPP
+#version 450
 
-#include <cstdint>
+// incoming
+layout(location = 0) in vec2 i_texCoord;
 
-namespace holoscan::viz {
+// outgoing
+layout(location = 0) out vec4 o_color;
+layout(depth_less) out float gl_FragDepth;
 
-/// Flags passed to the init function
-typedef enum {
-  NONE = 0x00000000,                   ///< none
-  FULLSCREEN = 0x00000001,             ///< switch the app to full screen mode
-  HEADLESS = 0x00000002,               ///< run in headless mode
-  BACKGROUND_ZERO_ALPHA = 0x00000004,  ///< set the background alpha value to 0 (for use when
-                                       ///  compositing Holoviz output externally).
-} InitFlags;
+// sampler
+layout(binding = 0) uniform sampler2D texSampler;
+layout(binding = 1) uniform sampler2D depthSampler;
 
-}  // namespace holoscan::viz
+layout(push_constant) uniform constants
+{
+    layout(offset = 21 * 4) float opacity;
+} pushConstants;
 
-#endif /* HOLOSCAN_VIZ_HOLOVIZ_INIT_FLAGS_HPP */
+void main()
+{
+    o_color = texture(texSampler, i_texCoord);
+    o_color.a *= pushConstants.opacity;
+    gl_FragDepth = texture(depthSampler, i_texCoord).r;
+    // o_color.r = gl_FragDepth;
+    // o_color.g = gl_FragDepth;
+    // o_color.b = gl_FragDepth;
+    // o_color.a = 1.0;
+    // gl_FragDepth = 1.0;
+}

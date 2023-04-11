@@ -13,6 +13,18 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-add_subdirectory(3d)
-add_subdirectory(demo)
-add_subdirectory(depth_map)
+set(PROJECT_NAME holoviz_3d)
+
+add_executable(${PROJECT_NAME})
+
+target_sources(${PROJECT_NAME}
+    PRIVATE
+        Main.cpp
+    )
+
+target_link_libraries(${PROJECT_NAME}
+    PRIVATE
+        holoscan::viz
+        holoscan::viz::imgui
+        nvpro_core
+    )

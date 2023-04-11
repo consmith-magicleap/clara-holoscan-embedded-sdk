@@ -66,6 +66,19 @@ class Primitive {
   }
   Primitive() = delete;
 
+  bool three_dimensional() const {
+    switch (topology_) {
+      case PrimitiveTopology::POINT_LIST_3D:
+      case PrimitiveTopology::LINE_LIST_3D:
+      case PrimitiveTopology::LINE_STRIP_3D:
+      case PrimitiveTopology::TRIANGLE_LIST_3D:
+        return true;
+        break;
+      default:
+        return false;
+    }
+  }
+
   bool operator==(const Primitive& rhs) const {
     return ((attributes_ == rhs.attributes_) && (topology_ == rhs.topology_) &&
             (primitive_count_ == rhs.primitive_count_) && (data_ == rhs.data_));
@@ -227,9 +240,19 @@ void GeometryLayer::primitive(PrimitiveTopology topology, uint32_t primitive_cou
       vertex_counts.push_back(required_data_size / 2);
       vkTopology = vk::PrimitiveTopology::ePointList;
       break;
+    case PrimitiveTopology::POINT_LIST_3D:
+      required_data_size = primitive_count * 3;
+      vertex_counts.push_back(required_data_size / 3);
+      vkTopology = vk::PrimitiveTopology::ePointList;
+      break;
     case PrimitiveTopology::LINE_LIST:
       required_data_size = primitive_count * 2 * 2;
       vertex_counts.push_back(required_data_size / 2);
+      vkTopology = vk::PrimitiveTopology::eLineList;
+      break;
+    case PrimitiveTopology::LINE_LIST_3D:
+      required_data_size = primitive_count * 2 * 3;
+      vertex_counts.push_back(required_data_size / 3);
       vkTopology = vk::PrimitiveTopology::eLineList;
       break;
     case PrimitiveTopology::LINE_STRIP:
@@ -237,9 +260,19 @@ void GeometryLayer::primitive(PrimitiveTopology topology, uint32_t primitive_cou
       vertex_counts.push_back(required_data_size / 2);
       vkTopology = vk::PrimitiveTopology::eLineStrip;
       break;
+    case PrimitiveTopology::LINE_STRIP_3D:
+      required_data_size = 3 + primitive_count * 3;
+      vertex_counts.push_back(required_data_size / 3);
+      vkTopology = vk::PrimitiveTopology::eLineStrip;
+      break;
     case PrimitiveTopology::TRIANGLE_LIST:
       required_data_size = primitive_count * 3 * 2;
       vertex_counts.push_back(required_data_size / 2);
+      vkTopology = vk::PrimitiveTopology::eTriangleList;
+      break;
+    case PrimitiveTopology::TRIANGLE_LIST_3D:
+      required_data_size = primitive_count * 3 * 3;
+      vertex_counts.push_back(required_data_size / 3);
       vkTopology = vk::PrimitiveTopology::eTriangleList;
       break;
     case PrimitiveTopology::CROSS_LIST:
@@ -371,6 +404,12 @@ void GeometryLayer::end(Vulkan* vulkan) {
                   vertices.end(),
                   {primitive.data_[index * 2 + 0], primitive.data_[index * 2 + 1], 0.f});
             }
+            break;
+          case PrimitiveTopology::POINT_LIST_3D:
+          case PrimitiveTopology::LINE_LIST_3D:
+          case PrimitiveTopology::LINE_STRIP_3D:
+          case PrimitiveTopology::TRIANGLE_LIST_3D:
+            vertices.insert(vertices.end(), primitive.data_.begin(), primitive.data_.end());
             break;
           case PrimitiveTopology::CROSS_LIST:
             // generate crosses
@@ -645,13 +684,43 @@ void GeometryLayer::end(Vulkan* vulkan) {
 }
 
 void GeometryLayer::render(Vulkan* vulkan) {
-  // setup the view matrix in a way that geometry coordinates are in the range [0...1]
-  nvmath::mat4f view_matrix;
-  view_matrix.identity();
-  view_matrix.scale({2.f, 2.f, 1.f});
-  view_matrix.translate({-.5f, -.5f, 0.f});
+  if (get_views().empty()) {
+    // render the default view.
+    nvmath::mat4f view_matrix_3d;
+    vulkan->get_window()->get_view_matrix(&view_matrix_3d);
+    render_view(vulkan, view_matrix_3d);
+  } else {
+    for (const View& view : get_views()) {
+      vulkan->set_viewport(view.viewport_offset[0],
+                           view.viewport_offset[1],
+                           view.viewport_size[0],
+                           view.viewport_size[1]);
+      nvmath::mat4f view_matrix_3d;
+      if (view.camera.has_value()) {
+        nvmath::mat4f view_matrix(view.camera->view_matrix_col_major.data());
+        nvmath::mat4f projection_matrix(view.camera->projection_matrix_col_major.data());
+        view_matrix_3d = projection_matrix * view_matrix;
+      } else {
+        vulkan->get_window()->get_view_matrix(&view_matrix_3d);
+      }
+      render_view(vulkan, view_matrix_3d);
+    }
+    // reset the viewport
+    uint32_t width;
+    uint32_t height;
+    vulkan->get_window()->get_framebuffer_size(&width, &height);
+    vulkan->set_viewport(0, 0, width, height);
+  }
+}
 
-  // draw geometry primitives
+void GeometryLayer::render_view(Vulkan* vulkan, const nvmath::mat4f& view_matrix_3d) {
+  // setup the 2D view matrix in a way that geometry coordinates are in the range [0...1]
+  nvmath::mat4f view_matrix_2d;
+  view_matrix_2d.identity();
+  view_matrix_2d.scale({2.f, 2.f, 1.f});
+  view_matrix_2d.translate({-.5f, -.5f, 0.f});
+
+  // draw 2D geometry primitives
   for (auto&& primitive : impl_->primitives_) {
     uint32_t vertex_offset = primitive.vertex_offset_;
     for (auto&& vertex_count : primitive.vertex_counts_) {
@@ -663,7 +732,7 @@ void GeometryLayer::render(Vulkan* vulkan) {
                    primitive.attributes_.color_,
                    primitive.attributes_.point_size_,
                    primitive.attributes_.line_width_,
-                   view_matrix);
+                   primitive.three_dimensional() ? view_matrix_3d : view_matrix_2d);
       vertex_offset += vertex_count;
     }
   }
@@ -681,14 +750,12 @@ void GeometryLayer::render(Vulkan* vulkan) {
           pcmd->IdxOffset,
           pcmd->VtxOffset,
           get_opacity(),
-          view_matrix);
+          view_matrix_2d);
     }
   }
 
   // draw depth maps
   if (!impl_->depth_maps_.empty()) {
-    vulkan->get_window()->get_view_matrix(&view_matrix);
-
     for (auto&& depth_map : impl_->depth_maps_) {
       std::vector<Vulkan::Buffer*> vertex_buffers;
       vertex_buffers.push_back(impl_->depth_map_vertex_buffer_);
@@ -709,7 +776,7 @@ void GeometryLayer::render(Vulkan* vulkan) {
                              depth_map.attributes_.color_,
                              depth_map.attributes_.point_size_,
                              depth_map.attributes_.line_width_,
-                             view_matrix);
+                             view_matrix_3d);
       } else if (depth_map.render_mode_ == DepthMapRenderMode::POINTS) {
         vulkan->draw(vk::PrimitiveTopology::ePointList,
                      depth_map.width_ * depth_map.height_,
@@ -719,7 +786,7 @@ void GeometryLayer::render(Vulkan* vulkan) {
                      depth_map.attributes_.color_,
                      depth_map.attributes_.point_size_,
                      depth_map.attributes_.line_width_,
-                     view_matrix);
+                     view_matrix_3d);
       } else {
         throw std::runtime_error("Unhandled depth render mode.");
       }
